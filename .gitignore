@@ -1,4 +1,4 @@
-find . -size +100M
+*.avi
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -78,6 +78,8 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+*.mp4
 
 # IPython
 profile_default/
