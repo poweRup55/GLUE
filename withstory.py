@@ -4,19 +4,15 @@ import os.path
 import random
 import shutil
 import subprocess
+import time
+from multiprocessing import Pool, Process
 from os import listdir
-from os.path import isfile, join
 
-from multiprocessing import Process
-
-import cv2
 import ffmpeg
+from moviepy.editor import VideoFileClip
 from moviepy.video.compositing.concatenate import concatenate_videoclips
-from moviepy.video.io.VideoFileClip import VideoFileClip
-import moviepy.editor as mp
+from moviepy.video.fx.resize import resize
 from pafy import pafy
-
-from multiprocessing import Pool, TimeoutError
 
 import video_generator
 
@@ -24,8 +20,8 @@ OUTPUT_DIRECOTRY = "output\\with_story"
 FPS = 25
 VIDEO_SIZE = (1920, 1080)
 MAX_BYTE_SIZE = 255
-MINUTES = 0
-SECONDS = 5
+MINUTES = 3
+SECONDS = 30
 TOTAL_TIME = MINUTES * 60 + SECONDS
 TEMP_DIRECTORY = OUTPUT_DIRECOTRY + "\\temp"
 UPDATED_DIRECTORY = OUTPUT_DIRECOTRY + "\\updated"
@@ -39,41 +35,47 @@ def main():
 
 def make_temp_videos():
     count = 0
+    jobs = {}
     with Pool(processes=8) as pool:
         while choose_video_time.story_percentage < 100:
-            os.makedirs(TEMP_DIRECTORY)
-            os.makedirs(UPDATED_DIRECTORY)
+            if not os.path.exists(TEMP_DIRECTORY):
+                os.makedirs(TEMP_DIRECTORY)
+            if not os.path.exists(UPDATED_DIRECTORY):
+                os.makedirs(UPDATED_DIRECTORY)
             file_name = str(count) + ".mp4"
-
             temp_filename = TEMP_DIRECTORY + "\\" + file_name
             time_of_video = choose_video_time()
-            job = pool.apply_async(start_sub_process, (file_name, temp_filename, time_of_video,))
-            job.get()
+            pool.apply_async(start_sub_process, (file_name, temp_filename, time_of_video,))
             count += 1
-        pool.close()
+        time.sleep(5 * 60)
+        print("TERMINATING!!")
+        pool.terminate()
         pool.join()
     print("done!")
 
 
 def start_sub_process(file_name, out_filename, time_of_video):
     # add_job_name(file_name)
-    print(out_filename + " started and is " + str(time_of_video) + " seconds long")
+    print(file_name + " started and is " + str(time_of_video) + " seconds long")
     finished = False
     while not finished:
         finished = start_sub_process_helper(out_filename, time_of_video)
         if not finished:
-            print("retrying " + out_filename)
+            print("retrying " + file_name)
             continue
-        p =
-        try:
-
-
-        except Exception as e:
-
+        print(file_name + 'downloaded successfully! Starting conversion')
+        convert_video_file(file_name, out_filename)
     # job_finished(file_name)
     file = open(out_filename, 'r')
     file.close()
     print(out_filename + " finished")
+
+
+def convert_video_file(file_name, out_filename):
+    clip = VideoFileClip(out_filename)
+    clip = resize(clip, height=1080)
+    clip.write_videofile(UPDATED_DIRECTORY + '\\' + file_name)
+    clip.close()
 
 
 def start_sub_process_helper(out_filename, time_of_video):
@@ -83,9 +85,10 @@ def start_sub_process_helper(out_filename, time_of_video):
                                                                                     vcodec='libx264',
                                                                                     loglevel="quiet").overwrite_output().run_async())
     try:
-        download_video_from_youtube.wait(min(time_of_video * 10, 20))
+        download_video_from_youtube.wait(20)
         return True
     except subprocess.TimeoutExpired:
+        print("Timeout " + out_filename)
         return False
 
 
@@ -111,7 +114,6 @@ def choose_video_time():
 def quarter(x):
     return math.ceil(x * 4) / 4
 
-
 #
 # def add_job_name(job_name):
 #     with ThreadsPoolFiles.ThreadPoolSingelton().process_files_list_mutex:
@@ -126,12 +128,9 @@ def quarter(x):
 
 
 if __name__ == '__main__':
-    # try:
-        choose_video_time.story_percentage = 0
-        main()
-    # finally:
-    #     shutil.rmtree(TEMP_DIRECTORY)
-    #     shutil.rmtree(UPDATED_DIRECTORY)
+
+    choose_video_time.story_percentage = 0
+    main()
 
 """
     
