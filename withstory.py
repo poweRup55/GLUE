@@ -7,12 +7,17 @@ import subprocess
 from os import listdir
 from os.path import isfile, join
 
+from multiprocessing import Process
+
+import cv2
 import ffmpeg
 from moviepy.video.compositing.concatenate import concatenate_videoclips
 from moviepy.video.io.VideoFileClip import VideoFileClip
+import moviepy.editor as mp
 from pafy import pafy
 
-import ThreadsPoolFiles
+from multiprocessing import Pool, TimeoutError
+
 import video_generator
 
 OUTPUT_DIRECOTRY = "output\\with_story"
@@ -20,59 +25,73 @@ FPS = 25
 VIDEO_SIZE = (1920, 1080)
 MAX_BYTE_SIZE = 255
 MINUTES = 0
-SECONDS = 30
+SECONDS = 5
 TOTAL_TIME = MINUTES * 60 + SECONDS
 TEMP_DIRECTORY = OUTPUT_DIRECOTRY + "\\temp"
+UPDATED_DIRECTORY = OUTPUT_DIRECOTRY + "\\updated"
 
 
 def main():
     make_temp_videos()
-    concatenate(TEMP_DIRECTORY, OUTPUT_DIRECOTRY + '\\final.mp4')
+    concatenate(UPDATED_DIRECTORY, OUTPUT_DIRECOTRY + '\\final' + str(
+        len([name for name in os.listdir(OUTPUT_DIRECOTRY)])) + '.mp4')
 
 
 def make_temp_videos():
     count = 0
-    executor = ThreadsPoolFiles.ThreadPoolSingelton(3)
-    while choose_video_time.story_percentage < 100:
-        if not os.path.isdir(TEMP_DIRECTORY): os.mkdir(TEMP_DIRECTORY)
-        out_filename = TEMP_DIRECTORY + "\\" + str(count) + ".mp4"
-        time_of_video = choose_video_time()
-        executor.add_job(start_sub_process, out_filename, time_of_video)
-        count += 1
-    executor.wait()
+    with Pool(processes=8) as pool:
+        while choose_video_time.story_percentage < 100:
+            os.makedirs(TEMP_DIRECTORY)
+            os.makedirs(UPDATED_DIRECTORY)
+            file_name = str(count) + ".mp4"
+
+            temp_filename = TEMP_DIRECTORY + "\\" + file_name
+            time_of_video = choose_video_time()
+            job = pool.apply_async(start_sub_process, (file_name, temp_filename, time_of_video,))
+            job.get()
+            count += 1
+        pool.close()
+        pool.join()
     print("done!")
 
 
-def start_sub_process(out_filename, time_of_video):
-    file_name = out_filename.removesuffix('.mp4').split('\\')[-1]
-    ThreadsPoolFiles.ThreadPoolSingelton().add_job_name(file_name)
-    # print(out_filename + " started and is " + str(time_of_video) + " seconds long")
-    start_sub_process_helper(out_filename, time_of_video)
-    ThreadsPoolFiles.ThreadPoolSingelton().job_finished(file_name)
-    # print(out_filename + " finished")
+def start_sub_process(file_name, out_filename, time_of_video):
+    # add_job_name(file_name)
+    print(out_filename + " started and is " + str(time_of_video) + " seconds long")
+    finished = False
+    while not finished:
+        finished = start_sub_process_helper(out_filename, time_of_video)
+        if not finished:
+            print("retrying " + out_filename)
+            continue
+        p =
+        try:
+
+
+        except Exception as e:
+
+    # job_finished(file_name)
+    file = open(out_filename, 'r')
+    file.close()
+    print(out_filename + " finished")
 
 
 def start_sub_process_helper(out_filename, time_of_video):
     youtube_url = "https://www.youtube.com/watch?v=" + video_generator.YouTubeSingleton().youtube_search()
     stream_url = pafy.new(youtube_url).getbest().url
+    download_video_from_youtube = (ffmpeg.input(stream_url, t=time_of_video).output(out_filename, f='mp4', acodec='aac',
+                                                                                    vcodec='libx264',
+                                                                                    loglevel="quiet").overwrite_output().run_async())
     try:
-        process = (
-            ffmpeg
-            .input(stream_url, t=time_of_video)
-            .output(out_filename, f='mp4', acodec='aac', vcodec='libx264', loglevel="quiet")
-            .overwrite_output()
-            .run_async()
-        )
-        process.wait(timeout=20)
+        download_video_from_youtube.wait(min(time_of_video * 10, 20))
+        return True
     except subprocess.TimeoutExpired:
-        process.kill()
-        start_sub_process_helper(out_filename, time_of_video)
+        return False
 
 
 def concatenate(video_clips_path, output_path):
     # create VideoFileClip object for each video file
-    files_in_temp = [video_clips_path + "\\" + f for f in listdir(video_clips_path) if
-                     isfile(join(video_clips_path, f))]
+    files_in_temp = [video_clips_path + "\\" + f for f in listdir(video_clips_path)]
     clips = [VideoFileClip(c) for c in files_in_temp]
     final_clip = concatenate_videoclips(clips, method="compose")
     # write the output video file
@@ -93,10 +112,26 @@ def quarter(x):
     return math.ceil(x * 4) / 4
 
 
+#
+# def add_job_name(job_name):
+#     with ThreadsPoolFiles.ThreadPoolSingelton().process_files_list_mutex:
+#         ThreadsPoolFiles.ThreadPoolSingelton().process_files_list.append(job_name)
+#         print(ThreadsPoolFiles.ThreadPoolSingelton().process_files_list, len(
+#             ThreadsPoolFiles.ThreadPoolSingelton().process_files_list))
+#
+#
+# def job_finished(job_name):
+#     with ThreadsPoolFiles.ThreadPoolSingelton().process_files_list_mutex:
+#         ThreadsPoolFiles.ThreadPoolSingelton().process_files_list.remove(job_name)
+
+
 if __name__ == '__main__':
-    choose_video_time.story_percentage = 0
-    main()
-    shutil.rmtree(TEMP_DIRECTORY)
+    # try:
+        choose_video_time.story_percentage = 0
+        main()
+    # finally:
+    #     shutil.rmtree(TEMP_DIRECTORY)
+    #     shutil.rmtree(UPDATED_DIRECTORY)
 
 """
     

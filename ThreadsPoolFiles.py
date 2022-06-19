@@ -41,28 +41,7 @@ class ThreadPoolSingelton(metaclass=ThreadPoolSingletonMeta):
     """
     We'll use this property to prove that our Singleton really works.
     """
-
-    def __init__(self, max_workers=10) -> None:
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._process_list = []
-        self._process_list_mutex = Lock()
-        self._process_files_list = []
-        self._process_files_list_mutex = Lock()
-
-    def wait(self):
-        wait(self._process_list)
-        return
-
-    def add_job(self, process, *args, **kwargs):
-        with self._process_list_mutex:
-            future = self._executor.submit(process, *args, **kwargs)
-            self._process_list.append(future)
-
-    def add_job_name(self, job_name):
-        with self._process_files_list_mutex:
-            self._process_files_list.append(job_name)
-            print(self._process_files_list, len(self._process_files_list))
-
-    def job_finished(self, job_name):
-        with self._process_files_list_mutex:
-            self._process_files_list.remove(job_name)
+    process_list = []
+    process_list_mutex = Lock()
+    process_files_list = []
+    process_files_list_mutex = Lock()
