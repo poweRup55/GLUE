@@ -12,11 +12,4 @@
     <orderEntry type="jdk" jdkName="Python 3.10 (EXPRIMENTAL-FINAL)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
-  <component name="PyNamespacePackagesService">
-    <option name="namespacePackageFolders">
-      <list>
-        <option value="$MODULE_DIR$/video_generator" />
-      </list>
-    </option>
-  </component>
 </module>
