@@ -9,7 +9,6 @@ import os
 import os.path
 import shutil
 import sys
-from math import ceil
 from multiprocessing import Pool
 from multiprocessing import Process
 from multiprocessing import freeze_support
@@ -19,7 +18,6 @@ from subprocess import TimeoutExpired
 from time import sleep
 
 import ffmpeg
-from dotenv import load_dotenv
 from moviepy.video.compositing.concatenate import concatenate_videoclips
 from moviepy.video.fx.resize import resize
 from moviepy.video.io.VideoFileClip import VideoFileClip
@@ -27,86 +25,99 @@ from pafy import pafy
 from tqdm import tqdm
 
 import youtube_singleton
-
-MASTER_DOWNLOAD_TIMEOUT = 5 * 60
-
-OUTPUT_DIRECOTRY = "output"
-FPS = 25
-VIDEO_SIZE = (1920, 1080)
-MAX_BYTE_SIZE = 255
-MINUTES = 1
-SECONDS = 30
-TOTAL_TIME = MINUTES * 60 + SECONDS
-TEMP_DIRECTORY = OUTPUT_DIRECOTRY + "\\temp"
-CONVERTED_DIRECTORY = OUTPUT_DIRECOTRY + "\\conversion"
+from constants import *
 
 
-def choose_video_time(elapsed_percentage):
-    if 0 <= elapsed_percentage <= 60:
-        time = -0.2 * elapsed_percentage + 15
-        time = max(0.04, time)
-    elif 60 < elapsed_percentage <= 80:
-        time = uniform(0.04, 0.12)
+def choose_video_length(elapsed_percentage):
+    """
+    Chooses a video length according to custom mathematical function according to the already elapsed percentage
+    :param elapsed_percentage: int - the elapsed percentage of the video length that was sent to the process pool
+    :return: video_length - float, updated elapsed percentage - float
+    """
+    if 0 <= elapsed_percentage <= FIRST_PHASE_PRECENTAGE:
+        video_length = -0.2 * elapsed_percentage + 15
+        video_length = max(FIRST_PHASE_MIN_LENGTH, video_length)
+    elif FIRST_PHASE_PRECENTAGE < elapsed_percentage <= SECOND_PHASE_PERCENTAGE:
+        video_length = uniform(MIN_SECOND_PHASE_LEN, MAX_SECOND_PHASE_LEN)
     else:
-        time = quarter(uniform(5, 7))
-    elapsed_percentage += time * 100 / TOTAL_TIME
-    return time, elapsed_percentage
+        video_length = uniform(MIN_THIRD_PHASE_LEN, MAX_THIRD_PHASE_LEN)
+    elapsed_percentage += video_length * 100 / TOTAL_TIME
+    return video_length, elapsed_percentage
 
 
-def quarter(x):
-    return ceil(x * 4) / 4
-
-
-def progress_bar(i, j):
+def video_length_choose_progress_bar(v_counter, per_total_len):
+    """
+    A progress bar for the video length selector.
+    :param v_counter: Counter of how many videos were sent to download - int
+    :param per_total_len: total elapsed percentage of the length of the videos - float
+    """
     sleep(0.1)
     sys.stdout.write('\r')
-    sys.stdout.write("Downloading queue: " + str(i) + " which are: " + str(j) + ' of the video')
+    sys.stdout.write(PROGRESS_BAR_FORMAT_TXT.format(v_counter, per_total_len))
     sys.stdout.flush()
 
 
-def start_sub_process(file_name, out_filename, video_length):
+def download_youtube_video(video_file_name, video_file_path, video_length):
     """
-
-    :param file_name:
-    :param out_filename:
-    :param video_length:
-    :return:
+    Downloads and resizes a yotube video.
+    :param video_file_name: video file name - string
+    :param video_file_path: video file path - string
+    :param video_length: Length of video in seconds - float
     """
     retry_count = 0
-    while retry_count >= 10:
+    while retry_count <= MAX_RETRY_COUNT:
         try:
-            if not get_video_from_youtube(out_filename, video_length):
+            if not pick_n_down_video(video_file_path, video_length):
                 retry_count += 1
                 continue
-            convert_video_file(file_name, out_filename)
-            check_file_integrity(file_name)
-        except Exception as e:  # TODO check for type of exceptions!!!!
-            # print(e, "\n ....................................Retrying!")
+            check_file_integrity(video_file_name, TEMP_DIRECTORY)
+            resize_video_file(video_file_name, video_file_path)
+            check_file_integrity(video_file_name, CONVERTED_DIRECTORY)
+            break
+        except Exception as e:  # TODO check for type of exceptions!!!! There are a lot of them
+            print(e)
             retry_count += 1
             continue
 
 
-def check_file_integrity(file_name):
-    file = open(CONVERTED_DIRECTORY + '\\' + file_name, 'r')
+def check_file_integrity(file_name, folder_path):
+    """
+    A basic check for a file - see if it opens.
+    :param file_name: file name - string
+    :param folder_path: folder path - string
+    """
+    file = open(folder_path + '\\' + file_name, READ_MODE)
     file.close()
 
 
-def convert_video_file(file_name, out_filename):
-    clip = VideoFileClip(out_filename)
-    clip = resize(clip, height=1080)
-    clip.write_videofile(CONVERTED_DIRECTORY + '\\' + file_name, verbose=False, logger=None)
+def resize_video_file(video_file_name, video_file_path):
+    """
+    Resize a video file and saves it.
+    :param video_file_name: video file name - string
+    :param video_file_path: video file path - string
+    """
+    clip = VideoFileClip(video_file_path)
+    clip = resize(clip, height=RESIZE_HEIGHT)
+    clip.write_videofile(CONVERTED_DIRECTORY + '\\' + video_file_name, verbose=False, logger=None)
     clip.close()
 
 
-def get_video_from_youtube(out_filename, time_of_video):
-    youtube_url = "https://www.youtube.com/watch?v=" + youtube_singleton.YouTubeSingleton().youtube_search()
+def pick_n_down_video(video_file_path, time_of_video):
+    """
+    Picks and downloads a YouTube video with ffmpeg until timeout
+    :param video_file_path: YouTube video download file name as a string
+    :param time_of_video: length of the video in float
+    :return: True if downloaded successfully, false otherwise.
+    """
+    youtube_url = YOUTUBE_PREFIX + youtube_singleton.YouTubeSingleton().youtube_search()
     stream_url = pafy.new(youtube_url).getbest().url
     download_video_from_youtube = (
-        ffmpeg.input(stream_url, t=time_of_video).output(out_filename, f='mp4', acodec='aac', vcodec='libx264',
-                                                         loglevel="quiet").overwrite_output().run_async())
+        ffmpeg.input(stream_url, t=time_of_video).output(video_file_path, f=VIDEO_CONTAINER, acodec=ACODEC,
+                                                         vcodec=OUTPUT_CODEC,
+                                                         loglevel=LOGLEVEL).overwrite_output().run_async())
     try:
-        download_video_from_youtube.wait(max(20, time_of_video * 3))
-        file = open(out_filename, 'r')
+        download_video_from_youtube.wait(max(MIN_TIMEOUT_LEN, time_of_video * 5))
+        file = open(video_file_path, READ_MODE)  # Used to check if corrupted download
         file.close()
         return True
     except TimeoutExpired:
@@ -116,69 +127,74 @@ def get_video_from_youtube(out_filename, time_of_video):
         return False
 
 
-OPENING_SCRIPT = 'Making A Very Coherent Video'
-
-
 def concatenate(video_clips_path, output_path):
+    """
+    Concatenate video together
+    :param video_clips_path: Path to folder of videos
+    :param output_path: output path of the final video
+    """
     # create VideoFileClip object for each video file
-    files_in_temp = [video_clips_path + "\\" + f for f in listdir(video_clips_path)]
+    videos_in_folder = [video_clips_path + "\\" + f for f in listdir(video_clips_path)]
     clips = []
-    for file in files_in_temp:
+    for video in videos_in_folder:
         try:
-            clip = VideoFileClip(file)
+            clip = VideoFileClip(video)
             clips.append(clip)
-        except OSError as e:
+        except OSError as e:  # Skips broken videos
             continue
-    final_clip = concatenate_videoclips(clips, method="compose")
+    final_clip = concatenate_videoclips(clips, method=CONCATENATE_METHOD)
     # write the output video file
-    final_clip.write_videofile(output_path, codec='libx264')
-
-
-def download_youtube_videos():
-    create_output_dir()
-    with Pool(processes=8) as pool:
-        working_jobs, num_of_video = create_video_download_jobs(pool)
-        print('\n')
-        sys.stdout.flush()
-        download_progress_bar(num_of_video, working_jobs)
-        pool.terminate()
-        pool.join()
+    final_clip.write_videofile(output_path, codec=OUTPUT_CODEC)
 
 
 def download_progress_bar(num_of_video, working_jobs):
+    """
+    A progress bar of all the video downloads.
+    As a timeout of MASTER_DOWNLOAD_TIMEOUT length.
+    :param num_of_video: Total number of video that will be downloaded
+    :param working_jobs: A list of all the jobs in the process pool
+    """
     num_of_finished_jobs = 0
     sec_count = 0
-    with tqdm(total=num_of_video, desc="Number of videos downloaded") as pbar:
+    with tqdm(total=num_of_video, desc=TQDM_DOWNLOAD_DESC) as pbar:
         while True:
             if sec_count >= MASTER_DOWNLOAD_TIMEOUT:
-                print("Terminating because it is taking too long. Making video now")
+                print(TERMINATING_DOWN_MESSAGE)
                 break
             finished_jobs = [job for job in working_jobs if job.ready()]
             num_of_finished_len = len(finished_jobs)
             pbar.update(num_of_finished_len - num_of_finished_jobs)
             num_of_finished_jobs = num_of_finished_len
             if len(working_jobs) == num_of_finished_jobs:
-                print("finished downloading all videos!")
+                print(FINISHED_DOWNLOAD_MSG)
                 break
-            sleep(1)
-            sec_count = +1
+            sleep(TQDM_SLEEP_DUR)
+            sec_count += TQDM_SLEEP_DUR
 
 
 def create_video_download_jobs(pool):
+    """
+    Picks the video length and creates download jobs for the process pool.
+    :param pool: Process pool instance
+    :return: A list of all the jobs that were made, the total number of videos that will be downloaded
+    """
     num_of_video = 0
     total_per = 0
     working_jobs = []
     while total_per < 100:
-        file_name = str(num_of_video) + ".mp4"
-        video_length, total_per = choose_video_time(total_per)
-        temp_filename = TEMP_DIRECTORY + "\\" + file_name
-        working_jobs.append(pool.apply_async(start_sub_process, (file_name, temp_filename, video_length)))
+        video_file_name = str(num_of_video) + VIDEO_EXTENSION
+        video_length, total_per = choose_video_length(total_per)
+        video_file_path = TEMP_DIRECTORY + "\\" + video_file_name
+        working_jobs.append(pool.apply_async(download_youtube_video, (video_file_name, video_file_path, video_length)))
         num_of_video += 1
-        progress_bar(num_of_video, total_per)
+        video_length_choose_progress_bar(num_of_video, total_per)
     return working_jobs, num_of_video
 
 
 def create_output_dir():
+    """
+    Creates a temp directory and a converted video directory.
+    """
     if os.path.exists(TEMP_DIRECTORY):
         shutil.rmtree(TEMP_DIRECTORY)
     os.makedirs(TEMP_DIRECTORY)
@@ -187,22 +203,40 @@ def create_output_dir():
     os.makedirs(CONVERTED_DIRECTORY)
 
 
+def start_process_pool():
+    """
+    Starts a process pool and gives it videos to download
+    """
+    create_output_dir()
+    with Pool(processes=NUM_OF_PROCESSES) as pool:
+        working_jobs, num_of_video = create_video_download_jobs(pool)
+        print('\n')
+        sys.stdout.flush()
+        download_progress_bar(num_of_video, working_jobs)
+        pool.terminate()
+        pool.join()
+
+
 def download_videos():
-    video_from_internet_method = Process(target=download_youtube_videos, daemon=False)
+    """
+    Opens a subprocess that downloads YouTube videos
+    """
+    video_from_internet_method = Process(target=start_process_pool, daemon=False)
     video_from_internet_method.start()
     video_from_internet_method.join()
     video_from_internet_method.terminate()
-    print("Finished downloading videos! Making master video")
 
 
 if __name__ == '__main__':
     freeze_support()  # used for multiprocessing
-    load_dotenv()  # loading API key
-    print(OPENING_SCRIPT)
+    # load_dotenv()  # used for API key
+    print(START_MSG)
     download_videos()
-    concatenate(CONVERTED_DIRECTORY, OUTPUT_DIRECOTRY + '\\final' + str(
-        len([name for name in os.listdir(OUTPUT_DIRECOTRY)])) + '.mp4')
-    print('\n \n  FINISHED! \n \n')
-    input('WRITE ME A STORY TO FINISH AND PRESS ENTER: ')
+    print(MAKING_MASTER_VIDEO_TXT)
+    concatenate(CONVERTED_DIRECTORY, OUTPUT_DIRECOTRY + NAME_OF_FINAL_PRODUCT + str(
+        len([name for name in os.listdir(OUTPUT_DIRECOTRY)])) + VIDEO_EXTENSION)
+    print(FINISHED_MESSAGE)
+    # input('WRITE ME A STORY TO FINISH AND PRESS ENTER: ')
     path = os.path.realpath(OUTPUT_DIRECOTRY)
     os.startfile(path)
+    exit(0)
