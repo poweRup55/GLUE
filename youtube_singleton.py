@@ -3,7 +3,7 @@
 IMPORTANT - ADD YOUR DEVELOPER KEY HERE FOR THIS TO WORK
 
 """
-
+import os
 import random
 from os.path import exists
 from threading import Lock
@@ -13,7 +13,7 @@ from random_word import RandomWords
 
 from constants import *
 
-DEVELOPER_KEY = ADD YOURS HERE
+DEVELOPER_KEY = os.environ['DEVELOPER_KEY']
 
 MAX_RESULTS = 50
 VIDEO = 'video'
