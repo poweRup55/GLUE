@@ -5,7 +5,7 @@ MIN_SECOND_PHASE_LEN = 0.04
 SECOND_PHASE_PERCENTAGE = 80
 FIRST_PHASE_PRECENTAGE = 60
 FIRST_PHASE_MIN_LENGTH = 3
-MAX_RETRY_COUNT = 10
+MAX_RETRY_COUNT = 5
 READ_MODE = 'r'
 RESIZE_HEIGHT = 1080
 LOGLEVEL = "quiet"
@@ -32,11 +32,24 @@ MAKING_MASTER_VIDEO_TXT = "Finished downloading videos! Making master video"
 FINISHED_DOWNLOAD_MSG = "finished downloading all videos!"
 TERMINATING_DOWN_MESSAGE = "Terminating because it is taking too long. Making video now"
 PROGRESS_BAR_FORMAT_TXT = "Downloading queue: {} which are: {:%} of the video"
-MIN_TIMEOUT_LEN = 20
+MAX_TIMEOUT_LEN = 20
+
+
+DEVELOPER_KEY = "AIzaSyCIsqXKj2mAuVsMTmokNNcWj1-uo6HoVRY"
+
+
+MAX_RESULTS = 50
+VIDEO = 'video'
+SNIPPET = 'snippet'
+APPEND_MODE = 'a+'
+VIDEO_DATABASE = "youtube_video_database.json"
+YOUTUBE_API_SERVICE_NAME = 'youtube'
+YOUTUBE_API_VERSION = 'v3'
+
 
 # Change this to change the final video length
 MINUTES = 1
-SECONDS = 30
+SECONDS = 0
 
 
 TOTAL_TIME = MINUTES * 60 + SECONDS

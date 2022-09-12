@@ -53,8 +53,8 @@ class YouTubeSingleton(metaclass=YouTubeSingletonMeta):
         self.video_mutex.acquire()
         self.video_links = set()
         # Add video links from video txt file
-        if exists(VIDEO_DATABASE_TXT):
-            with open(VIDEO_DATABASE_TXT, READ_MODE) as fp:
+        if exists(VIDEO_DATABASE):
+            with open(VIDEO_DATABASE, READ_MODE) as fp:
                 for line in fp:
                     x = line[:-1]
                     self.video_links.add(x)
