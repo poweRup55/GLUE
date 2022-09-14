@@ -1,9 +1,0 @@
-numpy~=1.23.2
-moviepy~=1.0.3
-pafy~=0.5.5
-tqdm~=4.64.0
-google-api-python-client~=2.57.0
-random-word~=1.0.10
-ffmpeg-python~=0.2.0
-opencv-python==4.5.5.64
-ffpyplayer~=4.3.5

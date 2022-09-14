@@ -41,9 +41,10 @@ class YouTubeSingleton:
         # print("Creating youtube singelton\n")
         self.developer_key_index = 1
         self.youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
-                             developerKey=DEVELOPER_KEYS[self.developer_key_index])
+                             developerKey=DEVELOPER_KEYS[self.developer_key_index],  static_discovery=False)
         self.video_links = {}
         self.video_database_lock = Lock()
+        self.shown_error = False
         # Add video links from video txt file
         if os.path.exists(VIDEO_DATABASE):
             if os.stat(VIDEO_DATABASE).st_size != 0:
@@ -90,6 +91,9 @@ class YouTubeSingleton:
             self.video_database_lock.release()
 
         except HttpError as e:
+            if not self.shown_error:
+                print("\nOUT OF QUOTA! Making a video from random words in local database\nPlease wait 24 hours and try again")
+                self.shown_error = True
             # if self.developer_key_index + 1 < len(DEVELOPER_KEYS):
             #
             #     print("OUT OF QUOTA! trying a different account\n")
@@ -97,12 +101,12 @@ class YouTubeSingleton:
             #     self.youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
             #                          developerKey=DEVELOPER_KEYS[self.developer_key_index])
             #     return self.search_youtube(video_links, word)
-            # print("OUT OF QUOTA! Picking a random video\n")
             # When an execution is made - use the database of videos
             self.video_database_lock.acquire()
             pick = list(self.video_links.values())
             video_links = choice(pick)
             self.video_database_lock.release()
+
         return video_links
 
 
@@ -258,7 +262,7 @@ def get_sentence_input():
             choice_input = int(input())
             if choice_input == 1:
                 words_input = RandomWords().get_random_words(hasDictionaryDef="true", includePartOfSpeech="noun,verb",
-                                                             limit=int(input("How many random words?")))
+                                                             limit=int(input("How many random words?\n")))
                 break
             elif choice_input == 2:
                 words_input = input("Please write something. Anything.\n")
@@ -275,7 +279,7 @@ def get_sentence_input():
     repeat = int(input("How many times do you want to repeat input?:\n"))
     if repeat:
         words_input = words_input * repeat
-    print(words_input)
+    # print(words_input)
     return words_input
 
 
@@ -309,22 +313,33 @@ def start_thread_pool(total_video_length, words):
 
 
 def main():
-    print_words_in_database()
-    sentence_input = get_sentence_input()
-    total_video_length = int(input(VIDEO_TO_BE_IN_SECONDS_))
-    create_output_dir()
-    start_thread_pool(total_video_length, sentence_input)
-    print(MAKING_MASTER_VIDEO_TXT)
-    output_name = OUTPUT_DIRECOTRY + '\\' + str(datetime.datetime.now()).replace('-', '_').replace(' ', '_').replace(
-        ':', '_')
-    concatenate(CONVERTED_DIRECTORY, output_name + VIDEO_EXTENSION, sentence_input)
-    with open(output_name + '.txt', 'w+') as f:
-        for word in sentence_input:
-            f.write(word)
-            f.write(" ")
-    print(FINISHED_MESSAGE)
-    open_folder_in_explorer()
-    exit(0)
+    # print_words_in_database()
+    quit = False
+    while not quit:
+        sentence_input = get_sentence_input()
+        total_video_length = int(input(VIDEO_TO_BE_IN_SECONDS_))
+        create_output_dir()
+        start_thread_pool(total_video_length, sentence_input)
+        print(MAKING_MASTER_VIDEO_TXT)
+        output_name = OUTPUT_DIRECOTRY + '\\' + str(datetime.datetime.now()).replace('-', '_').replace(' ', '_').replace(
+            ':', '_')
+        concatenate(CONVERTED_DIRECTORY, output_name + VIDEO_EXTENSION, sentence_input)
+        with open(output_name + '.txt', 'w+') as f:
+            for word in sentence_input:
+                f.write(word)
+                f.write(" ")
+        print(FINISHED_MESSAGE)
+        open_folder_in_explorer()
+        quit_input = None
+        while quit_input != 'y' or quit_input!='n':
+            quit_input = input("Do you want to try again? y/n ")
+            if quit_input == 'y':
+                break
+            if quit_input == 'n':
+                quit = True
+                break
+            print("Please write y or n\n")
+    sys.exit(0)
 
 
 def open_folder_in_explorer():
@@ -346,5 +361,6 @@ def print_words_in_database():
 
 if __name__ == '__main__':
     freeze_support()
+    print('Loading...\n')
     sleep(3)
     main()
