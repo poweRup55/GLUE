@@ -8,7 +8,7 @@ import random
 import re
 import shutil
 import string
-from multiprocessing import Lock, freeze_support
+from multiprocessing import Lock
 from multiprocessing.pool import ThreadPool
 from random import choice
 from time import sleep
@@ -25,23 +25,14 @@ from tqdm import tqdm
 
 from constants import *
 
-DEVELOPER_KEYS = ["AIzaSyCIsqXKj2mAuVsMTmokNNcWj1-uo6HoVRY", "AIzaSyBB-bJ-9g3WW8d59Q6xFBt6nL9N3dZYx9c",
-                  "AIzaSyAJ3u70IMZpnn5zbOqCOmxG-B4cEUwXuFI"]
-
-FORCE_KEYFRAMES_AT_CUTS = True
-
 VIDEO_TO_BE_IN_SECONDS_ = "How long would you like the video to be? (in seconds)\n"
-
-NEW_VIDEOS = False
 
 
 class YouTubeSingleton:
 
     def __init__(self):
         # print("Creating youtube singelton\n")
-        self.developer_key_index = 1
-        self.youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
-                             developerKey=DEVELOPER_KEYS[self.developer_key_index])
+        self.youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
         self.video_links = {}
         self.video_database_lock = Lock()
         # Add video links from video txt file
@@ -56,16 +47,15 @@ class YouTubeSingleton:
         :return: A YouTube video link suffix
         """
         video_links = []
-        if not NEW_VIDEOS:
-            word_in_database = False
-            self.video_database_lock.acquire()
-            if word in self.video_links:
-                word_in_database = True
-                video_links = self.video_links[word]
-            self.video_database_lock.release()
-            if word_in_database:
-                return choice(video_links)
-        video_links = self.search_youtube(video_links, word)
+        word_in_database = False
+        self.video_database_lock.acquire()
+        if word in self.video_links:
+            word_in_database = True
+            video_links = self.video_links[word]
+        self.video_database_lock.release()
+        if not word_in_database:
+            video_links = self.search_youtube(video_links, word)
+
         return choice(video_links)
 
     def search_youtube(self, video_links, word):
@@ -85,25 +75,47 @@ class YouTubeSingleton:
 
             self.video_database_lock.acquire()
             with open(VIDEO_DATABASE, 'w+') as fp:
-                self.video_links[word] = self.video_links.get(word, []) + video_links
+                self.video_links[word] = video_links
                 json.dump(self.video_links, fp)
             self.video_database_lock.release()
 
         except HttpError as e:
-            # if self.developer_key_index + 1 < len(DEVELOPER_KEYS):
-            #
-            #     print("OUT OF QUOTA! trying a different account\n")
-            #     self.developer_key_index += 1
-            #     self.youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
-            #                          developerKey=DEVELOPER_KEYS[self.developer_key_index])
-            #     return self.search_youtube(video_links, word)
-            # print("OUT OF QUOTA! Picking a random video\n")
+            print("OUT OF QUOTA! Picking a random video\n")
             # When an execution is made - use the database of videos
             self.video_database_lock.acquire()
             pick = list(self.video_links.values())
             video_links = choice(pick)
             self.video_database_lock.release()
         return video_links
+
+
+# def choose_video_length(elapsed_percentage):
+#     """
+#     Chooses a video length according to custom mathematical function according to the already elapsed percentage
+#     :param elapsed_percentage: int - the elapsed percentage of the video length that was sent to the process pool
+#     :return: video_length - float, updated elapsed percentage - float
+#     """
+#     if 0 <= elapsed_percentage <= FIRST_PHASE_PRECENTAGE:
+#         video_length = -0.2 * elapsed_percentage + 15
+#         video_length = max(FIRST_PHASE_MIN_LENGTH, video_length)
+#     elif FIRST_PHASE_PRECENTAGE < elapsed_percentage <= SECOND_PHASE_PERCENTAGE:
+#         video_length = uniform(MIN_SECOND_PHASE_LEN, MAX_SECOND_PHASE_LEN)
+#     else:
+#         video_length = uniform(MIN_THIRD_PHASE_LEN, MAX_THIRD_PHASE_LEN)
+#     elapsed_percentage += video_length * 100 / TOTAL_TIME
+#     return video_length, elapsed_percentage
+
+#
+# def video_length_choose_progress_bar(v_counter, per_total_len):
+#     """
+#     A progress bar for the video length selector.
+#     :param v_counter: Counter of how many videos were sent to download - int
+#     :param per_total_len: total elapsed percentage of the length of the videos - float
+#     """
+#     sleep(0.1)
+#     sys.stdout.write('\r')
+#     sys.stdout.write(PROGRESS_BAR_FORMAT_TXT.format(v_counter, per_total_len))
+#     sys.stdout.flush()
 
 
 def get_callable_range_video(length):
@@ -125,33 +137,36 @@ def download_youtube_video(youtube_singleton, temp_video_file_name, temp_video_f
     :param temp_video_file_path: video file path - string
     :param video_length: Length of video in seconds - float
     """
-    converted_file_path = CONVERTED_DIRECTORY + '\\' + temp_video_file_name
-    attempt = 0
-    while not os.path.exists(converted_file_path):
-        attempt += 1
-        try:
-            while not os.path.exists(temp_video_file_path):
-                get_and_down_youtube_vid(youtube_singleton, temp_video_file_path, video_length, word)
-            resize_video_file(temp_video_file_name, temp_video_file_path, word)
-        except:
-            # print("EXCEPTION! Deleting file")
-            if os.path.exists(temp_video_file_path):
-                os.remove(temp_video_file_path)
-            if os.path.exists(converted_file_path):
-                os.remove(converted_file_path)
-            if attempt >= 50:
-                break
+    while not os.path.exists(temp_video_file_path):
+        get_and_down_youtube_vid(youtube_singleton, temp_video_file_path, video_length, word)
+    resize_video_file(temp_video_file_name, temp_video_file_path, word)
+    # stream_url = pafy.new(youtube_url).getbest().url
+
+    retry_count = 0
+    # while retry_count <= MAX_RETRY_COUNT:
+    #     try:
+    #         if not ffmpeg_download(stream_url, video_file_path, video_length):
+    #             retry_count += 1
+    #             continue
+    #         check_file_integrity(video_file_name, TEMP_DIRECTORY)
+    #         resize_video_file(video_file_name, video_file_path)
+    #         check_file_integrity(video_file_name, CONVERTED_DIRECTORY)
+    #         break
+    #     except Exception as e:  # TODO check for type of exceptions!!!! There are a lot of them
+    #         print("inside download_youtube_video")
+    #         print(e)
+    #         retry_count += 1
+    #         continue
 
 
-def get_and_down_youtube_vid(youtube_singleton, temp_video_file_path, video_length, word):
+def get_and_down_youtube_vid(youtube_singleton, video_file_path, video_length, word):
     youtube_url = YOUTUBE_PREFIX + youtube_singleton.youtube_search(word)
     ydl_opts = {'ignoreerrors': True,
                 'quiet': True,
                 'format': 'mp4',
-                'outtmpl': temp_video_file_path,
+                'outtmpl': video_file_path,
                 'download_ranges': get_callable_range_video(video_length),
-                'noprogress': True,
-                'force_keyframes_at_cuts': FORCE_KEYFRAMES_AT_CUTS}
+                'noprogress': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([youtube_url])
 
@@ -172,24 +187,50 @@ def resize_video_file(video_file_name, video_file_path, word):
     :param video_file_name: video file name - string
     :param video_file_path: video file path - string
     """
-    clip = VideoFileClip(video_file_path)
-    clip = resize(clip, height=RESIZE_HEIGHT)
-    # Generate a text clip
-    # txt_clip = TextClip(txt=str(word).upper(), fontsize=100, font='lane', color='black',
-    #                     bg_color='white').set_position(("left", "bottom")).set_duration(clip.duration)
-    #
-    # clip = CompositeVideoClip([clip, txt_clip])
-    clip.write_videofile(CONVERTED_DIRECTORY + '\\' + video_file_name, verbose=False, logger=None)
+    try:
+        clip = VideoFileClip(video_file_path)
+        clip = resize(clip, height=RESIZE_HEIGHT)
+        # Generate a text clip
+        txt_clip = TextClip(txt=str(word).upper(), fontsize=100, font='lane', color='black',
+                            bg_color='white').set_position(("left", "bottom")).set_duration(clip.duration)
+
+        video = CompositeVideoClip([clip, txt_clip])
+        video.write_videofile(CONVERTED_DIRECTORY + '\\' + video_file_name, verbose=False, logger=None)
+    except Exception as e:
+        print(e)
 
 
-def concatenate(video_clips_path, output_path, sentence_input):
+# def ffmpeg_download(stream_url, video_file_path, time_of_video):
+#     """
+#     Picks and downloads a YouTube video with ffmpeg until timeout
+#     :param video_file_path: YouTube video download file name as a string
+#     :param time_of_video: length of the video in float
+#     :return: True if downloaded successfully, false otherwise.
+#     """
+#     download_video_from_youtube = (
+#         ffmpeg.input(stream_url, t=time_of_video).output(video_file_path, f=VIDEO_CONTAINER, acodec=ACODEC,
+#                                                          vcodec=OUTPUT_CODEC,
+#                                                          loglevel=LOGLEVEL).overwrite_output().run_async())
+#     try:
+#         download_video_from_youtube.wait(MAX_TIMEOUT_LEN)
+#         file = open(video_file_path, READ_MODE)  # Used to check if corrupted download
+#         file.close()
+#         return True
+#     except TimeoutExpired:
+#         # print("Timeout " + out_filename)
+#         return False
+#     except FileNotFoundError:
+#         return False
+
+
+def concatenate(video_clips_path, output_path):
     """
     Concatenate video together
     :param video_clips_path: Path to folder of videos
     :param output_path: output path of the final video
     """
     # create VideoFileClip object for each video file
-    videos_in_folder = ([video_clips_path + "\\" + str(i) + VIDEO_EXTENSION for i in range(len(sentence_input))])
+    videos_in_folder = [video_clips_path + "\\" + f for f in os.listdir(video_clips_path)]
     clips = []
     for video in videos_in_folder:
         try:
@@ -223,10 +264,29 @@ def download_progress_bar(num_of_video, working_jobs):
             pbar.update(num_of_finished_len - num_of_finished_jobs)
             num_of_finished_jobs = num_of_finished_len
             if len(working_jobs) == num_of_finished_jobs:
+                print(FINISHED_DOWNLOAD_MSG)
                 break
             sleep(TQDM_SLEEP_DUR)
             sec_count += TQDM_SLEEP_DUR
 
+
+# def create_video_download_jobs(pool, func):
+#     """
+#     Picks the video length and creates download jobs for the process pool.
+#     :param pool: Process pool instance
+#     :return: A list of all the jobs that were made, the total number of videos that will be downloaded
+#     """
+#     num_of_video = 0
+#     total_per = 0
+#     working_jobs = []
+#     while total_per < 100:
+#         video_file_name = str(num_of_video) + VIDEO_EXTENSION
+#         video_length, total_per = choose_video_length(total_per)
+#         video_file_path = TEMP_DIRECTORY + "\\" + video_file_name
+#         working_jobs.append(pool.apply_async(func, (video_file_name, video_file_path, video_length)))
+#         num_of_video += 1
+#         video_length_choose_progress_bar(num_of_video, total_per)
+#     return working_jobs, num_of_video
 
 def create_video_download_jobs(pool, words, total_video_length, youtube_singleton, func):
     """
@@ -257,7 +317,7 @@ def get_sentence_input():
         try:
             choice_input = int(input())
             if choice_input == 1:
-                words_input = RandomWords().get_random_words(hasDictionaryDef="true", includePartOfSpeech="noun,verb",
+                words_input = RandomWords().get_random_words(hasDictionaryDef="true",
                                                              limit=int(input("How many random words?")))
                 break
             elif choice_input == 2:
@@ -275,7 +335,6 @@ def get_sentence_input():
     repeat = int(input("How many times do you want to repeat input?:\n"))
     if repeat:
         words_input = words_input * repeat
-    print(words_input)
     return words_input
 
 
@@ -317,7 +376,7 @@ def main():
     print(MAKING_MASTER_VIDEO_TXT)
     output_name = OUTPUT_DIRECOTRY + '\\' + str(datetime.datetime.now()).replace('-', '_').replace(' ', '_').replace(
         ':', '_')
-    concatenate(CONVERTED_DIRECTORY, output_name + VIDEO_EXTENSION, sentence_input)
+    concatenate(CONVERTED_DIRECTORY, output_name + VIDEO_EXTENSION)
     with open(output_name + '.txt', 'w+') as f:
         for word in sentence_input:
             f.write(word)
@@ -345,6 +404,4 @@ def print_words_in_database():
 
 
 if __name__ == '__main__':
-    freeze_support()
-    sleep(3)
     main()
