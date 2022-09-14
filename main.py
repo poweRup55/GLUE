@@ -122,7 +122,7 @@ def get_callable_range_video(length):
     return video_length_call
 
 
-def download_youtube_video(youtube_singleton, temp_video_file_name, temp_video_file_path, video_length, word):
+def download_youtube_video(youtube_singleton, temp_video_file_name, temp_video_file_path, video_length, word, write_to_vid):
     """
     Downloads and resizes a YouTube video.
     :param temp_video_file_name: video file name - string
@@ -136,7 +136,7 @@ def download_youtube_video(youtube_singleton, temp_video_file_name, temp_video_f
         try:
             while not os.path.exists(temp_video_file_path):
                 get_and_down_youtube_vid(youtube_singleton, temp_video_file_path, video_length, word)
-            resize_video_file(temp_video_file_name, temp_video_file_path, word)
+            resize_video_file(temp_video_file_name, temp_video_file_path, word, write_to_vid)
         except:
             # print("EXCEPTION! Deleting file")
             if os.path.exists(temp_video_file_path):
@@ -170,7 +170,7 @@ def check_file_integrity(file_name, folder_path):
     file.close()
 
 
-def resize_video_file(video_file_name, video_file_path, word):
+def resize_video_file(video_file_name, video_file_path, word, write_to_vid):
     """
     Resize a video file and saves it.
     :param video_file_name: video file name - string
@@ -179,10 +179,11 @@ def resize_video_file(video_file_name, video_file_path, word):
     clip = VideoFileClip(video_file_path)
     clip = resize(clip, height=RESIZE_HEIGHT)
     # Generate a text clip
-    # txt_clip = TextClip(txt=str(word).upper(), fontsize=100, font='lane', color='black',
-    #                     bg_color='white').set_position(("left", "bottom")).set_duration(clip.duration)
-    #
-    # clip = CompositeVideoClip([clip, txt_clip])
+    if write_to_vid:
+        txt_clip = TextClip(txt=str(word).upper(), fontsize=100, font='lane', color='black',
+                            bg_color='white').set_position(("left", "bottom")).set_duration(clip.duration)
+
+        clip = CompositeVideoClip([clip, txt_clip])
     clip.write_videofile(CONVERTED_DIRECTORY + '\\' + video_file_name, verbose=False, logger=None)
 
 
@@ -232,7 +233,7 @@ def download_progress_bar(num_of_video, working_jobs):
             sec_count += TQDM_SLEEP_DUR
 
 
-def create_video_download_jobs(pool, words, total_video_length, youtube_singleton, func):
+def create_video_download_jobs(pool, words, total_video_length, youtube_singleton, write_to_vid, func):
     """
     Picks the video length and creates download jobs for the process pool.
     :param pool: Process pool instance
@@ -245,7 +246,7 @@ def create_video_download_jobs(pool, words, total_video_length, youtube_singleto
         working_jobs.append(
             pool.apply_async(func,
                              (youtube_singleton, temp_video_file_name, temp_video_file_path,
-                              get_video_length(total_video_length, words), words[i])))
+                              get_video_length(total_video_length, words), words[i], write_to_vid)))
     return working_jobs
 
 
@@ -295,7 +296,7 @@ def create_output_dir():
     os.makedirs(CONVERTED_DIRECTORY)
 
 
-def start_thread_pool(total_video_length, words):
+def start_thread_pool(total_video_length, words, write_to_vid):
     """
     Starts a process pool and gives it videos to download
     """
@@ -303,7 +304,7 @@ def start_thread_pool(total_video_length, words):
     youtube_singleton = YouTubeSingleton()
     with ThreadPool(NUM_OF_PROCESSES) as pool:
         # Gives jobs to pool
-        working_jobs = create_video_download_jobs(pool, words, total_video_length, youtube_singleton,
+        working_jobs = create_video_download_jobs(pool, words, total_video_length, youtube_singleton, write_to_vid,
                                                   download_youtube_video)
         print('\n')
         sys.stdout.flush()
@@ -314,32 +315,48 @@ def start_thread_pool(total_video_length, words):
 
 def main():
     # print_words_in_database()
-    quit = False
-    while not quit:
+    run = True
+    while run:
         sentence_input = get_sentence_input()
         total_video_length = int(input(VIDEO_TO_BE_IN_SECONDS_))
+        write_to_vid = yes_or_no_loop("Do you want the words to be written on the video? y/n ")
         create_output_dir()
-        start_thread_pool(total_video_length, sentence_input)
+        start_thread_pool(total_video_length, sentence_input, write_to_vid)
         print(MAKING_MASTER_VIDEO_TXT)
-        output_name = OUTPUT_DIRECOTRY + '\\' + str(datetime.datetime.now()).replace('-', '_').replace(' ', '_').replace(
-            ':', '_')
+        output_name = get_output_path()
         concatenate(CONVERTED_DIRECTORY, output_name + VIDEO_EXTENSION, sentence_input)
-        with open(output_name + '.txt', 'w+') as f:
-            for word in sentence_input:
-                f.write(word)
-                f.write(" ")
+        write_sentence_to_file(output_name, sentence_input)
         print(FINISHED_MESSAGE)
         open_folder_in_explorer()
-        quit_input = None
-        while quit_input != 'y' or quit_input!='n':
-            quit_input = input("Do you want to try again? y/n ")
-            if quit_input == 'y':
-                break
-            if quit_input == 'n':
-                quit = True
-                break
-            print("Please write y or n\n")
+        run = yes_or_no_loop("Do you want to try again? y/n ")
     sys.exit(0)
+
+
+def get_output_path():
+    output_name = OUTPUT_DIRECOTRY + '\\' + str(datetime.datetime.now()).replace('-', '_').replace(' ', '_').replace(
+        ':', '_')
+    return output_name
+
+
+def write_sentence_to_file(output_name, sentence_input):
+    with open(output_name + '.txt', 'w+') as f:
+        for word in sentence_input:
+            f.write(word)
+            f.write(" ")
+
+
+def yes_or_no_loop(question):
+    user_input = None
+    y_or_n = False
+    while user_input != 'y' or user_input != 'n':
+        user_input = input(question)
+        if user_input == 'y':
+            y_or_n = True
+            break
+        if user_input == 'n':
+            break
+        print("Please write y or n\n")
+    return y_or_n
 
 
 def open_folder_in_explorer():
