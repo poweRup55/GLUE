@@ -11,4 +11,4 @@ The program uses the moviepy library to concatenate and resize the downloaded vi
 
 required libraries: yt_dlp, google-api-python-client, moviepy, random_word, and tqdm. Also a developer key needes to the be added to the DEVELOPER_KEYS list in the program.
 
-run the experiment.py file and follow the prompts.
+run the main.py file and follow the prompts.
